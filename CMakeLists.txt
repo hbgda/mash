@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+project(mafia_scripthook)
+file(GLOB src CONFIGURE_DEPENDS "*.h" "*.cpp" "*/*.h" "*/*.cpp" "*/*/*.h" "*/*/*.cpp")
+add_library(mafia_scripthook SHARED ${src})
