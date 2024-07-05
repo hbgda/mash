@@ -1,21 +1,16 @@
-#include <Windows.h>
+#pragma once
 
 namespace lua {
     typedef int lua_State;
+    typedef int (*lua_CFunction)(lua_State* state);
+    typedef struct {
+        const char* name;
+        int (*func)(lua_State* state);
+    } luaL_reg;
 }
 
-#define LUA_FUNC(o, r, n, p) extern r (*n) p = nullptr
+#define LUA_FUNC(o, r, n, p) extern r (*n) p
 namespace lua {
     #include "lua_functions.h"
 }
 #undef LUA_FUNC
-
-void init_lua() {
-    uintptr_t baseAddress = (uintptr_t)GetModuleHandleA("mafiadefinitiveedition.exe");
-
-    using namespace lua;
-
-    #define LUA_FUNC(o, r, n, p) n = (r (*) p)(baseAddress + o)
-    #include "lua_functions.h"
-    #undef LUA_FUNC
-}

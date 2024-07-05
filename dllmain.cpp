@@ -1,51 +1,149 @@
 #include "utils.h"
 #include "hooking.h"
 #include "logging.h"
+#include "ui/ui.h"
+
 #include "lua.h"
+#include "lua_init.h"
 
 #include <Windows.h>
 #include <string>
 #include <string_view>
-#include <TlHelp32.h>
-#include <vector>
+
+#include <Tlhelp32.h>
 #include <iostream>
+#include <vector>
+
+bool suspendOtherThreads(DWORD currentThreadId) {
+    HANDLE hThreadSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (hThreadSnap == INVALID_HANDLE_VALUE) {
+        std::cerr << "CreateToolhelp32Snapshot failed.\n";
+        return false;
+    }
+
+    THREADENTRY32 te32;
+    te32.dwSize = sizeof(THREADENTRY32);
+
+    if (!Thread32First(hThreadSnap, &te32)) {
+        CloseHandle(hThreadSnap);
+        std::cerr << "Thread32First failed.\n";
+        return false;
+    }
+
+    do {
+        if (te32.th32ThreadID != currentThreadId && te32.th32OwnerProcessID == GetCurrentProcessId()) {
+            HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te32.th32ThreadID);
+            if (hThread != nullptr) {
+                SuspendThread(hThread);
+            }
+        }
+    } while (Thread32Next(hThreadSnap, &te32));
+
+    CloseHandle(hThreadSnap);
+
+    return true;
+}
+
+bool resumeOtherThreads(DWORD currentThreadId) {
+    HANDLE hThreadSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (hThreadSnap == INVALID_HANDLE_VALUE) {
+        std::cerr << "CreateToolhelp32Snapshot failed.\n";
+        return false;
+    }
+
+    THREADENTRY32 te32;
+    te32.dwSize = sizeof(THREADENTRY32);
+
+    if (!Thread32First(hThreadSnap, &te32)) {
+        CloseHandle(hThreadSnap);
+        std::cerr << "Thread32First failed.\n";
+        return false;
+    }
+
+
+    do {
+        if (te32.th32ThreadID != currentThreadId && te32.th32OwnerProcessID == GetCurrentProcessId()) {
+            HANDLE hThread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te32.th32ThreadID);
+            if (hThread != nullptr) {
+                ResumeThread(hThread);
+            }
+        }
+    } while (Thread32Next(hThreadSnap, &te32));
+
+    CloseHandle(hThreadSnap);
+    return true;
+}
+
 
 #pragma comment(lib, "../lib/libMinHook.x64.lib")
+
+
 
 using namespace std::literals;
 
 static constexpr auto test_lua = R"(
-print("Test?")
+print("Hello from injected lua")
 
-function writeAllGlobals()	
-	local file = io.open("out.txt", "w+")
+menu = ui.Menu()
 
-    local seen={}
-    local function dump(t,i)
-        seen[t]=true
-        local s={}
-        local n=0
-        for k, v in pairs(t) do
-            n=n+1
-			s[n]=tostring(k)
-        end
-        table.sort(s)
-        for k,v in ipairs(s) do
-            file:write(i .. v .. "\n")
-            v=t[v]
-            if type(v)=="table" and not seen[v] then
-                dump(v,i.."\t")
-            end
-        end
+local function dump (  value , call_indent)
+
+    if not call_indent then 
+      call_indent = ""
     end
-
-    dump(_G,"")
-	file:close()
+  
+    local indent = call_indent .. "  "
+  
+    local output = ""
+  
+    if type(value) == "table" then
+        output = output .. "{"
+        local first = true
+        for inner_key, inner_value in pairs ( value ) do
+          if not first then 
+            output = output .. ", "
+          else
+            first = false
+          end
+          output = output .. "\n" .. indent
+          output = output  .. inner_key .. " = " .. tostring(dump ( inner_value, indent ) )
+        end
+        output = output ..  "\n" .. call_indent .. "}"
+  
+    elseif type (value) == "userdata" then
+      output = "userdata"
+    else 
+      output =  value
+    end
+    return output 
+  end
+  
+function getAllData(t, prevData)
+    -- if prevData == nil, start empty, otherwise start with prevData
+    local data = prevData or {}
+  
+    -- copy all the attributes from t
+    for k,v in pairs(t) do
+        data[k] = data[k] or v
+    end
+  
+    -- get t's metatable, or exit if not existing
+    local mt = getmetatable(t)
+    if type(mt)~='table' then return data end
+  
+    -- get the __index from mt, or exit if not table
+    local index = mt.__index
+    if type(index)~='table' then return data end
+  
+    -- include the data from index into data, recursively, and return
+    return getAllData(index, data)
 end
+print(dump(getAllData(getmetatable(menu))))
 
-function test_func()
-    writeAllGlobals()
-end
+print(tostring(menu))
+
+menu:Set("Test")
+print(menu:Get())
 
 function reload(module)
         package.loaded[module] = nil
@@ -55,10 +153,9 @@ end
 function reload_test()
     a, b = pcall( function() reload("test") end )
     print(tostring(b))
-    error("test")
+    --error("test")
 end
 )"sv;
-
 
 lua::lua_State* lua_state = NULL;
 
@@ -95,18 +192,27 @@ MAKE_HOOK(int, lua_print, (lua::lua_State* state), {
 })
 
 void init() {
-    while (!lua_state) {
+    while (!lua_state) 
         Sleep(100);
-    }
+
+    if (!luaL_loadbuffer_Hook.Disable())
+        WARN("Could'nt disable loadbuffer hook?");
+
+    suspendOtherThreads(GetCurrentThreadId());
+
+    ui::register_lua(lua_state);
 
     DEBUG("Calling loadbuffer...");
     if (!CheckLuaErr(lua_state, lua::l_loadbuffer(lua_state, test_lua.data(), test_lua.length(), "test")))
         return;
 
-
     DEBUG("Calling pcall...");
-    if (!CheckLuaErr(lua_state, lua::pcall(lua_state, 0, 0, 0)))
+    if (!CheckLuaErr(lua_state, lua::pcall(lua_state, 0, 0, 0))) {
+        FATAL("[LUA] Error in loaded Lua!");
         return;
+    }
+
+    resumeOtherThreads(GetCurrentThreadId());
 
     while (true) {
         if (GetAsyncKeyState(VK_PRIOR) & 1) {
@@ -126,15 +232,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     	case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(hModule);
 
-            // config()
-
-            // if (lua::loadbuffer(lua_state, lua_func.data(), lua_func.length(), "line") != 0) {
-            //     FATAL("Failed loading buffer!");
-            // }
-
-
-            // lua::loadbuffer()
-
             utils::create_console();
             DEBUG("Console created.");
             if (MH_Initialize() != MH_OK) {
@@ -147,8 +244,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             INSTALL_AND_ENABLE(
                 lua_print,
                 lua::print,
-                FATAL("Failed to install/enable hook for smth."),
-                DEBUG("Installed hook for smth.")
+                FATAL("Failed to install/enable hook for lua_print."),
+                DEBUG("Installed hook for lua_print.")
             );
 
             INSTALL_AND_ENABLE(
