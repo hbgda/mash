@@ -9,6 +9,8 @@ namespace lua {
         const char* name;
         int (*func)(lua_State* state);
     } luaL_reg;
+
+    inline lua_State* state;
 }
 
 #define LUA_FUNC(o, r, n, p) extern r (*n) p

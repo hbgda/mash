@@ -6,6 +6,8 @@
 #include "lua.h"
 #include "lua_init.h"
 
+#include "imgui_dx11_hook/imgui_dx11.h"
+
 #include <Windows.h>
 #include <string>
 #include <string_view>
@@ -82,10 +84,14 @@ bool resumeOtherThreads(DWORD currentThreadId) {
 using namespace std::literals;
 
 static constexpr auto test_lua = R"(
-menu = ui.Menu()
+
+window = ui.Window("Test Window")
+menu = ui.Menu("Test Menu")
 
 menu:AddButton("Test", function () print("Test Clicked") end)
 menu:Click(0)
+
+window:AddMenu(menu)
 
 function reload(module)
         package.loaded[module] = nil
@@ -99,7 +105,7 @@ function reload_test()
 end
 )"sv;
 
-lua::lua_State* lua_state = NULL;
+// lua::lua_State* lua::state;
 
 bool CheckLuaErr(lua::lua_State* state, int err) {
     if (err != 0) {
@@ -110,7 +116,7 @@ bool CheckLuaErr(lua::lua_State* state, int err) {
 } 
 
 MAKE_HOOK(int, luaL_loadbuffer, (lua::lua_State* state, const char* buff, size_t sz, const char* name), {
-    lua_state = state;
+    lua::state = state;
     return luaL_loadbuffer_Call(state, buff, sz, name);
 })
 
@@ -134,22 +140,22 @@ MAKE_HOOK(int, lua_print, (lua::lua_State* state), {
 })
 
 void init() {
-    while (!lua_state) 
+    while (!lua::state) 
         Sleep(100);
 
     if (!luaL_loadbuffer_Hook.Disable())
-        WARN("Could'nt disable loadbuffer hook?");
+        WARN("Couldn't disable loadbuffer hook?");
 
     suspendOtherThreads(GetCurrentThreadId());
 
-    ui::register_lua(lua_state);
+    ui::register_lua(lua::state);
 
     DEBUG("Calling loadbuffer...");
-    if (!CheckLuaErr(lua_state, lua::l_loadbuffer(lua_state, test_lua.data(), test_lua.length(), "test")))
+    if (!CheckLuaErr(lua::state, lua::l_loadbuffer(lua::state, test_lua.data(), test_lua.length(), "test")))
         return;
 
     DEBUG("Calling pcall...");
-    if (!CheckLuaErr(lua_state, lua::pcall(lua_state, 0, 0, 0))) {
+    if (!CheckLuaErr(lua::state, lua::pcall(lua::state, 0, 0, 0))) {
         FATAL("[LUA] Error in loaded Lua!");
         return;
     }
@@ -159,8 +165,8 @@ void init() {
     while (true) {
         if (GetAsyncKeyState(VK_PRIOR) & 1) {
             DEBUG("[LUA] Reloading...");
-            lua::getglobal(lua_state, "reload_test");
-            if (!CheckLuaErr(lua_state, lua::pcall(lua_state, 0, 0, 0))) {
+            lua::getglobal(lua::state, "reload_test");
+            if (!CheckLuaErr(lua::state, lua::pcall(lua::state, 0, 0, 0))) {
                 WARN("[LUA] Failed to call reload_test!");
             }
         }
@@ -197,7 +203,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 DEBUG("Installed hook for luaL_loadbuffer.")
             );
 
-
+            CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)gui::init, hModule, 0, nullptr);
             CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)init, hModule, 0, nullptr);
             break;
     }
