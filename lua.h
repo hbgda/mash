@@ -1,5 +1,7 @@
 #pragma once
 
+#define LUA_REGISTRYINDEX (-10000)
+
 namespace lua {
     typedef int lua_State;
     typedef int (*lua_CFunction)(lua_State* state);

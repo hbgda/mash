@@ -22,4 +22,11 @@ LUA_FUNC(0x0e4da50, void, pushstring, (lua_State* state, const char* str, size_t
 LUA_FUNC(0x491fb00, int, rawset, (lua_State* state, int index));
 LUA_FUNC(0x0e4dcd0, void, setfield, (lua_State* state, int index, const char* field));
 LUA_FUNC(0x49136e0, void, pushnamedcclosure, (lua_State* state, lua_CFunction fn, int n, const char* name, int unk));
-LUA_FUNC(0x491bd40, void*, checkudata, (lua_State* state, int index, const char* name));
+LUA_FUNC(0x491bd40, void*, checkudata, (lua_State* state, int arg, const char* name));
+LUA_FUNC(0x491d450, int, ref, (lua_State* state, int index));
+LUA_FUNC(0x491d950, void, unref, (lua_State* state, int index, int ref));
+LUA_FUNC(0x23f2580, void, rawgeti, (lua_State* state, int index, int n));
+LUA_FUNC(0x491b8f0, double, checknumber, (lua_State* state, int arg));
+LUA_FUNC(0x491b7a0, int, checkinteger, (lua_State* state, int arg));
+LUA_FUNC(0x0e4e0b0, int, type, (lua_State* state, int index));
+LUA_FUNC(0x4913420, const char*, _typename, (lua_State* state, int tp));

@@ -82,68 +82,10 @@ bool resumeOtherThreads(DWORD currentThreadId) {
 using namespace std::literals;
 
 static constexpr auto test_lua = R"(
-print("Hello from injected lua")
-
 menu = ui.Menu()
 
-local function dump (  value , call_indent)
-
-    if not call_indent then 
-      call_indent = ""
-    end
-  
-    local indent = call_indent .. "  "
-  
-    local output = ""
-  
-    if type(value) == "table" then
-        output = output .. "{"
-        local first = true
-        for inner_key, inner_value in pairs ( value ) do
-          if not first then 
-            output = output .. ", "
-          else
-            first = false
-          end
-          output = output .. "\n" .. indent
-          output = output  .. inner_key .. " = " .. tostring(dump ( inner_value, indent ) )
-        end
-        output = output ..  "\n" .. call_indent .. "}"
-  
-    elseif type (value) == "userdata" then
-      output = "userdata"
-    else 
-      output =  value
-    end
-    return output 
-  end
-  
-function getAllData(t, prevData)
-    -- if prevData == nil, start empty, otherwise start with prevData
-    local data = prevData or {}
-  
-    -- copy all the attributes from t
-    for k,v in pairs(t) do
-        data[k] = data[k] or v
-    end
-  
-    -- get t's metatable, or exit if not existing
-    local mt = getmetatable(t)
-    if type(mt)~='table' then return data end
-  
-    -- get the __index from mt, or exit if not table
-    local index = mt.__index
-    if type(index)~='table' then return data end
-  
-    -- include the data from index into data, recursively, and return
-    return getAllData(index, data)
-end
-print(dump(getAllData(getmetatable(menu))))
-
-print(tostring(menu))
-
-menu:Set("Test")
-print(menu:Get())
+menu:AddButton("Test", function () print("Test Clicked") end)
+menu:Click(0)
 
 function reload(module)
         package.loaded[module] = nil

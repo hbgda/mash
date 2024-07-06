@@ -1,13 +1,19 @@
 #include "../lua.h"
+#include <vector>
 
 namespace ui {
     void register_lua(lua::lua_State* state);
 
+    typedef struct {
+        const char* label;
+        int lua_ref;
+    } MenuButton;
+
     class Menu {
     public:
-        const char* x;
-        Menu() {
-            x = "test";
-        }
+        std::vector<MenuButton*> m_btns;
+        Menu() {}
+        bool Click(lua::lua_State* state, int idx);
+        void AddButton(const char* label, int lua_ref);
     };
 }
